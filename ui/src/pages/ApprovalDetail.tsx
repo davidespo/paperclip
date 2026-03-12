@@ -65,7 +65,7 @@ export function ApprovalDetail() {
 
   useEffect(() => {
     setBreadcrumbs([
-      { label: "Approvals", href: "/approvals" },
+      { label: "Review Queue", href: "/approvals" },
       { label: approval?.id?.slice(0, 8) ?? approvalId ?? "Approval" },
     ]);
   }, [setBreadcrumbs, approval, approvalId]);
@@ -152,7 +152,7 @@ export function ApprovalDetail() {
   const primaryLinkedIssue = linkedIssues?.[0] ?? null;
   const resolvedCta =
     primaryLinkedIssue
-      ? {
+        ? {
           label:
             (linkedIssues?.length ?? 0) > 1
               ? "Review linked issues"
@@ -165,7 +165,7 @@ export function ApprovalDetail() {
             to: `/agents/${linkedAgentId}`,
           }
         : {
-            label: "Back to approvals",
+            label: "Back to review queue",
             to: "/approvals",
           };
 

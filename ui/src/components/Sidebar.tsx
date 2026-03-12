@@ -6,6 +6,7 @@ import {
   DollarSign,
   History,
   Search,
+  ShieldCheck,
   SquarePen,
   Network,
   Settings,
@@ -72,6 +73,7 @@ export function Sidebar() {
             <span className="truncate">New Issue</span>
           </button>
           <SidebarNavItem to="/dashboard" label="Dashboard" icon={LayoutDashboard} liveCount={liveRunCount} />
+          <SidebarNavItem to="/approvals" label="Review Queue" icon={ShieldCheck} />
           <SidebarNavItem
             to="/inbox"
             label="Inbox"

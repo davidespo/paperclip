@@ -26,6 +26,7 @@ import {
   Inbox,
   DollarSign,
   History,
+  ShieldCheck,
   SquarePen,
   Plus,
 } from "lucide-react";
@@ -145,6 +146,10 @@ export function CommandPalette() {
           <CommandItem onSelect={() => go("/inbox")}>
             <Inbox className="mr-2 h-4 w-4" />
             Inbox
+          </CommandItem>
+          <CommandItem onSelect={() => go("/approvals")}>
+            <ShieldCheck className="mr-2 h-4 w-4" />
+            Review Queue
           </CommandItem>
           <CommandItem onSelect={() => go("/issues")}>
             <CircleDot className="mr-2 h-4 w-4" />
