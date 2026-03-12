@@ -31,9 +31,10 @@ import { useCompany } from "../context/CompanyContext";
 import {
   Field,
   ToggleField,
-  ToggleWithNumber,
+  ToggleWithDuration,
   CollapsibleSection,
   DraftInput,
+  DraftDurationInput,
   DraftNumberInput,
   help,
   adapterLabels,
@@ -788,17 +789,16 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
             : <div className="px-4 py-2 text-xs font-medium text-muted-foreground flex items-center gap-2"><Heart className="h-3 w-3" /> Run Policy</div>
           }
           <div className={cn(cards ? "border border-border rounded-lg p-4 space-y-3" : "px-4 pb-3 space-y-3")}>
-            <ToggleWithNumber
+            <ToggleWithDuration
               label="Heartbeat on interval"
               hint={help.heartbeatInterval}
               checked={val!.heartbeatEnabled}
               onCheckedChange={(v) => set!({ heartbeatEnabled: v })}
-              number={val!.intervalSec}
-              onNumberChange={(v) => set!({ intervalSec: v })}
-              numberLabel="sec"
-              numberPrefix="Run heartbeat every"
-              numberHint={help.intervalSec}
-              showNumber={val!.heartbeatEnabled}
+              valueSec={val!.intervalSec}
+              onValueChange={(v) => set!({ intervalSec: v })}
+              valuePrefix="Run heartbeat every"
+              valueHint={help.intervalSec}
+              showValue={val!.heartbeatEnabled}
             />
           </div>
         </div>
@@ -810,17 +810,16 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
           }
           <div className={cn(cards ? "border border-border rounded-lg overflow-hidden" : "")}>
             <div className={cn(cards ? "p-4 space-y-3" : "px-4 pb-3 space-y-3")}>
-              <ToggleWithNumber
+              <ToggleWithDuration
                 label="Heartbeat on interval"
                 hint={help.heartbeatInterval}
                 checked={eff("heartbeat", "enabled", heartbeat.enabled !== false)}
                 onCheckedChange={(v) => mark("heartbeat", "enabled", v)}
-                number={eff("heartbeat", "intervalSec", Number(heartbeat.intervalSec ?? 300))}
-                onNumberChange={(v) => mark("heartbeat", "intervalSec", v)}
-                numberLabel="sec"
-                numberPrefix="Run heartbeat every"
-                numberHint={help.intervalSec}
-                showNumber={eff("heartbeat", "enabled", heartbeat.enabled !== false)}
+                valueSec={eff("heartbeat", "intervalSec", Number(heartbeat.intervalSec ?? 300))}
+                onValueChange={(v) => mark("heartbeat", "intervalSec", v)}
+                valuePrefix="Run heartbeat every"
+                valueHint={help.intervalSec}
+                showValue={eff("heartbeat", "enabled", heartbeat.enabled !== false)}
               />
             </div>
             <CollapsibleSection
@@ -840,8 +839,8 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                 )}
                 onChange={(v) => mark("heartbeat", "wakeOnDemand", v)}
               />
-              <Field label="Cooldown (sec)" hint={help.cooldownSec}>
-                <DraftNumberInput
+              <Field label="Cooldown" hint={help.cooldownSec}>
+                <DraftDurationInput
                   value={eff(
                     "heartbeat",
                     "cooldownSec",

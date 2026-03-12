@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import ms from "ms";
 import {
   Tooltip,
   TooltipTrigger,
@@ -48,11 +49,11 @@ export const help: Record<string, string> = {
   payloadTemplateJson: "Optional JSON merged into remote adapter request payloads before Paperclip adds its standard wake and workspace fields.",
   webhookUrl: "The URL that receives POST requests when the agent is invoked.",
   heartbeatInterval: "Run this agent automatically on a timer. Useful for periodic tasks like checking for new work.",
-  intervalSec: "Seconds between automatic heartbeat invocations.",
+  intervalSec: "Time between automatic heartbeat invocations. Accepts plain seconds or ms-style values like 45m, 6h, and 1d.",
   timeoutSec: "Maximum seconds a run can take before being terminated. 0 means no timeout.",
   graceSec: "Seconds to wait after sending interrupt before force-killing the process.",
   wakeOnDemand: "Allow this agent to be woken by assignments, API calls, UI actions, or automated systems.",
-  cooldownSec: "Minimum seconds between consecutive heartbeat runs.",
+  cooldownSec: "Minimum time between consecutive heartbeat runs. Accepts plain seconds or ms-style values like 45m, 6h, and 1d.",
   maxConcurrentRuns: "Maximum number of heartbeat runs that can execute simultaneously for this agent.",
   budgetMonthlyCents: "Monthly spending limit in cents. 0 means no limit.",
 };
@@ -190,6 +191,90 @@ export function ToggleWithNumber({
           />
           <span>{numberLabel}</span>
           {numberHint && <HintIcon text={numberHint} />}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function isPlainSeconds(value: string): boolean {
+  return /^\d+(?:\.\d+)?$/.test(value);
+}
+
+export function parseDurationSeconds(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (isPlainSeconds(trimmed)) {
+    const seconds = Number(trimmed);
+    return Number.isFinite(seconds) ? Math.max(0, Math.round(seconds)) : null;
+  }
+  const durationMs = ms(trimmed);
+  if (typeof durationMs !== "number" || !Number.isFinite(durationMs)) return null;
+  return Math.max(0, Math.round(durationMs / 1000));
+}
+
+export function formatDurationSeconds(value: number): string {
+  const seconds = Math.max(0, Math.round(value));
+  if (seconds === 0) return "0s";
+  if (seconds % 86400 === 0) return ms(seconds * 1000, { long: false });
+  if (seconds % 3600 === 0) return `${seconds / 3600}h`;
+  if (seconds % 60 === 0) return `${seconds / 60}m`;
+  return `${seconds}s`;
+}
+
+export function ToggleWithDuration({
+  label,
+  hint,
+  checked,
+  onCheckedChange,
+  valueSec,
+  onValueChange,
+  valueHint,
+  valuePrefix,
+  showValue,
+}: {
+  label: string;
+  hint?: string;
+  checked: boolean;
+  onCheckedChange: (v: boolean) => void;
+  valueSec: number;
+  onValueChange: (v: number) => void;
+  valueHint?: string;
+  valuePrefix?: string;
+  showValue: boolean;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-muted-foreground">{label}</span>
+          {hint && <HintIcon text={hint} />}
+        </div>
+        <button
+          className={cn(
+            "relative inline-flex h-5 w-9 items-center rounded-full transition-colors shrink-0",
+            checked ? "bg-green-600" : "bg-muted"
+          )}
+          onClick={() => onCheckedChange(!checked)}
+        >
+          <span
+            className={cn(
+              "inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform",
+              checked ? "translate-x-4.5" : "translate-x-0.5"
+            )}
+          />
+        </button>
+      </div>
+      {showValue && (
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          {valuePrefix && <span>{valuePrefix}</span>}
+          <DraftDurationInput
+            value={valueSec}
+            onCommit={onValueChange}
+            immediate
+            className="w-20 rounded-md border border-border px-2 py-0.5 bg-transparent outline-none text-xs font-mono text-center"
+          />
+          {valueHint && <HintIcon text={valueHint} />}
         </div>
       )}
     </div>
@@ -383,6 +468,55 @@ export function DraftNumberInput({
         const num = Number(draft) || 0;
         if (num !== value) onCommit(num);
       }}
+      {...props}
+    />
+  );
+}
+
+export function DraftDurationInput({
+  value,
+  onCommit,
+  immediate,
+  className,
+  ...props
+}: {
+  value: number;
+  onCommit: (v: number) => void;
+  immediate?: boolean;
+  className?: string;
+} & Omit<React.InputHTMLAttributes<HTMLInputElement>, "value" | "onChange" | "className" | "type">) {
+  const [draft, setDraft] = useState(() => formatDurationSeconds(value));
+  useEffect(() => setDraft(formatDurationSeconds(value)), [value]);
+
+  const parsed = parseDurationSeconds(draft);
+  const isInvalid = draft.trim().length > 0 && parsed === null;
+
+  return (
+    <input
+      type="text"
+      className={cn(className, isInvalid && "border-destructive text-destructive")}
+      value={draft}
+      onChange={(e) => {
+        const next = e.target.value;
+        setDraft(next);
+        if (!immediate) return;
+        const nextSeconds = parseDurationSeconds(next);
+        if (nextSeconds !== null) onCommit(nextSeconds);
+      }}
+      onBlur={() => {
+        const nextSeconds = parseDurationSeconds(draft);
+        if (nextSeconds === null) {
+          setDraft(formatDurationSeconds(value));
+          return;
+        }
+        if (nextSeconds !== value) onCommit(nextSeconds);
+        setDraft(formatDurationSeconds(nextSeconds));
+      }}
+      spellCheck={false}
+      autoCapitalize="off"
+      autoCorrect="off"
+      aria-invalid={isInvalid}
+      placeholder="e.g. 45m"
       {...props}
     />
   );
