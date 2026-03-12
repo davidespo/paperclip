@@ -2,7 +2,7 @@ import { memo, useEffect, useMemo, useRef, useState, type ChangeEvent } from "re
 import { Link, useLocation } from "react-router-dom";
 import type { IssueComment, Agent } from "@paperclipai/shared";
 import { Button } from "@/components/ui/button";
-import { Check, Copy, Paperclip } from "lucide-react";
+import { ArrowDownUp, Check, Copy, Paperclip } from "lucide-react";
 import { Identity } from "./Identity";
 import { InlineEntitySelector, type InlineEntityOption } from "./InlineEntitySelector";
 import { MarkdownBody } from "./MarkdownBody";
@@ -115,14 +115,85 @@ type TimelineItem =
   | { kind: "comment"; id: string; createdAtMs: number; comment: CommentWithRunMeta }
   | { kind: "run"; id: string; createdAtMs: number; run: LinkedRunItem };
 
+type CommentDateDisplayMode = "relative" | "locale";
+
+function formatCommentDateLocale(date: Date | string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "long",
+    timeStyle: "short",
+  }).format(new Date(date));
+}
+
+function formatCommentDateRelative(date: Date | string): string {
+  const timestamp = new Date(date).getTime();
+  const diffSeconds = Math.round((timestamp - Date.now()) / 1000);
+  const divisions = [
+    { amount: 60, unit: "second" },
+    { amount: 60, unit: "minute" },
+    { amount: 24, unit: "hour" },
+    { amount: 7, unit: "day" },
+    { amount: 4.34524, unit: "week" },
+    { amount: 12, unit: "month" },
+    { amount: Number.POSITIVE_INFINITY, unit: "year" },
+  ] as const;
+
+  let value = diffSeconds;
+  let unit: Intl.RelativeTimeFormatUnit = "second";
+  for (const division of divisions) {
+    if (Math.abs(value) < division.amount) {
+      unit = division.unit;
+      break;
+    }
+    value /= division.amount;
+  }
+
+  return new Intl.RelativeTimeFormat(undefined, { numeric: "auto" }).format(Math.round(value), unit);
+}
+
+function CommentTimestamp({
+  commentId,
+  createdAt,
+  mode,
+  onToggle,
+}: {
+  commentId: string;
+  createdAt: Date | string;
+  mode: CommentDateDisplayMode;
+  onToggle: () => void;
+}) {
+  const localeLabel = formatCommentDateLocale(createdAt);
+  const relativeLabel = formatCommentDateRelative(createdAt);
+  const label = mode === "relative" ? relativeLabel : localeLabel;
+  const title = mode === "relative" ? localeLabel : relativeLabel;
+
+  return (
+    <a
+      href={`#comment-${commentId}`}
+      title={title}
+      onClick={(event) => {
+        event.preventDefault();
+        onToggle();
+        window.history.replaceState(null, "", `#comment-${commentId}`);
+      }}
+      className="text-xs text-muted-foreground hover:text-foreground hover:underline transition-colors"
+    >
+      {label}
+    </a>
+  );
+}
+
 const TimelineList = memo(function TimelineList({
   timeline,
   agentMap,
   highlightCommentId,
+  commentDateDisplayMode,
+  onToggleCommentDateDisplayMode,
 }: {
   timeline: TimelineItem[];
   agentMap?: Map<string, Agent>;
   highlightCommentId?: string | null;
+  commentDateDisplayMode: CommentDateDisplayMode;
+  onToggleCommentDateDisplayMode: () => void;
 }) {
   if (timeline.length === 0) {
     return <p className="text-sm text-muted-foreground">No comments or runs yet.</p>;
@@ -180,12 +251,12 @@ const TimelineList = memo(function TimelineList({
                 <Identity name="You" size="sm" />
               )}
               <span className="flex items-center gap-1.5">
-                <a
-                  href={`#comment-${comment.id}`}
-                  className="text-xs text-muted-foreground hover:text-foreground hover:underline transition-colors"
-                >
-                  {formatDateTime(comment.createdAt)}
-                </a>
+                <CommentTimestamp
+                  commentId={comment.id}
+                  createdAt={comment.createdAt}
+                  mode={commentDateDisplayMode}
+                  onToggle={onToggleCommentDateDisplayMode}
+                />
                 <CopyMarkdownButton text={comment.body} />
               </span>
             </div>
@@ -234,6 +305,8 @@ export function CommentThread({
   const [attaching, setAttaching] = useState(false);
   const [reassignTarget, setReassignTarget] = useState(currentAssigneeValue);
   const [highlightCommentId, setHighlightCommentId] = useState<string | null>(null);
+  const [sortDescending, setSortDescending] = useState(true);
+  const [commentDateDisplayMode, setCommentDateDisplayMode] = useState<CommentDateDisplayMode>("relative");
   const editorRef = useRef<MarkdownEditorRef>(null);
   const attachInputRef = useRef<HTMLInputElement | null>(null);
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -256,11 +329,21 @@ export function CommentThread({
       run,
     }));
     return [...commentItems, ...runItems].sort((a, b) => {
-      if (a.createdAtMs !== b.createdAtMs) return a.createdAtMs - b.createdAtMs;
-      if (a.kind === b.kind) return a.id.localeCompare(b.id);
-      return a.kind === "comment" ? -1 : 1;
+      if (a.createdAtMs !== b.createdAtMs) {
+        return sortDescending ? b.createdAtMs - a.createdAtMs : a.createdAtMs - b.createdAtMs;
+      }
+      if (a.kind === b.kind) {
+        return sortDescending ? b.id.localeCompare(a.id) : a.id.localeCompare(b.id);
+      }
+      return sortDescending
+        ? a.kind === "comment"
+          ? 1
+          : -1
+        : a.kind === "comment"
+          ? -1
+          : 1;
     });
-  }, [comments, linkedRuns]);
+  }, [comments, linkedRuns, sortDescending]);
 
   // Build mention options from agent map (exclude terminated agents)
   const mentions = useMemo<MentionOption[]>(() => {
@@ -346,101 +429,130 @@ export function CommentThread({
   }
 
   const canSubmit = !submitting && !!body.trim();
+  const toggleCommentDateDisplayMode = () => {
+    setCommentDateDisplayMode((current) => (current === "relative" ? "locale" : "relative"));
+  };
+  const composer = (
+    <div className="space-y-2">
+      <MarkdownEditor
+        ref={editorRef}
+        value={body}
+        onChange={setBody}
+        placeholder="Leave a comment..."
+        mentions={mentions}
+        onSubmit={handleSubmit}
+        imageUploadHandler={imageUploadHandler}
+        contentClassName="min-h-[60px] text-sm"
+      />
+      <div className="flex items-center justify-end gap-3">
+        {onAttachImage && (
+          <div className="mr-auto flex items-center gap-3">
+            <input
+              ref={attachInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              className="hidden"
+              onChange={handleAttachFile}
+            />
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => attachInputRef.current?.click()}
+              disabled={attaching}
+              title="Attach image"
+            >
+              <Paperclip className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
+        {isClosed && (
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={reopen}
+              onChange={(e) => setReopen(e.target.checked)}
+              className="rounded border-border"
+            />
+            Re-open
+          </label>
+        )}
+        {enableReassign && reassignOptions.length > 0 && (
+          <InlineEntitySelector
+            value={reassignTarget}
+            options={reassignOptions}
+            placeholder="Assignee"
+            noneLabel="No assignee"
+            searchPlaceholder="Search assignees..."
+            emptyMessage="No assignees found."
+            onChange={setReassignTarget}
+            className="text-xs h-8"
+            renderTriggerValue={(option) => {
+              if (!option) return <span className="text-muted-foreground">Assignee</span>;
+              const agentId = option.id.startsWith("agent:") ? option.id.slice("agent:".length) : null;
+              const agent = agentId ? agentMap?.get(agentId) : null;
+              return (
+                <>
+                  {agent ? (
+                    <AgentIcon icon={agent.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  ) : null}
+                  <span className="truncate">{option.label}</span>
+                </>
+              );
+            }}
+            renderOption={(option) => {
+              if (!option.id) return <span className="truncate">{option.label}</span>;
+              const agentId = option.id.startsWith("agent:") ? option.id.slice("agent:".length) : null;
+              const agent = agentId ? agentMap?.get(agentId) : null;
+              return (
+                <>
+                  {agent ? (
+                    <AgentIcon icon={agent.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  ) : null}
+                  <span className="truncate">{option.label}</span>
+                </>
+              );
+            }}
+          />
+        )}
+        <Button size="sm" disabled={!canSubmit} onClick={handleSubmit}>
+          {submitting ? "Posting..." : "Comment"}
+        </Button>
+      </div>
+    </div>
+  );
 
   return (
     <div className="space-y-4">
-      <h3 className="text-sm font-semibold">Comments &amp; Runs ({timeline.length})</h3>
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold">Comments &amp; Runs ({timeline.length})</h3>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          onClick={() => setSortDescending((current) => !current)}
+        >
+          <ArrowDownUp className="h-3.5 w-3.5" />
+          Reverse sort direction
+          <span className="font-mono text-[11px] text-muted-foreground">
+            {sortDescending ? "DESC" : "ASC"}
+          </span>
+        </Button>
+      </div>
 
-      <TimelineList timeline={timeline} agentMap={agentMap} highlightCommentId={highlightCommentId} />
+      {sortDescending ? composer : null}
+
+      <TimelineList
+        timeline={timeline}
+        agentMap={agentMap}
+        highlightCommentId={highlightCommentId}
+        commentDateDisplayMode={commentDateDisplayMode}
+        onToggleCommentDateDisplayMode={toggleCommentDateDisplayMode}
+      />
 
       {liveRunSlot}
 
-      <div className="space-y-2">
-        <MarkdownEditor
-          ref={editorRef}
-          value={body}
-          onChange={setBody}
-          placeholder="Leave a comment..."
-          mentions={mentions}
-          onSubmit={handleSubmit}
-          imageUploadHandler={imageUploadHandler}
-          contentClassName="min-h-[60px] text-sm"
-        />
-        <div className="flex items-center justify-end gap-3">
-          {onAttachImage && (
-            <div className="mr-auto flex items-center gap-3">
-              <input
-                ref={attachInputRef}
-                type="file"
-                accept="image/png,image/jpeg,image/webp,image/gif"
-                className="hidden"
-                onChange={handleAttachFile}
-              />
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => attachInputRef.current?.click()}
-                disabled={attaching}
-                title="Attach image"
-              >
-                <Paperclip className="h-4 w-4" />
-              </Button>
-            </div>
-          )}
-          {isClosed && (
-            <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={reopen}
-                onChange={(e) => setReopen(e.target.checked)}
-                className="rounded border-border"
-              />
-              Re-open
-            </label>
-          )}
-          {enableReassign && reassignOptions.length > 0 && (
-            <InlineEntitySelector
-              value={reassignTarget}
-              options={reassignOptions}
-              placeholder="Assignee"
-              noneLabel="No assignee"
-              searchPlaceholder="Search assignees..."
-              emptyMessage="No assignees found."
-              onChange={setReassignTarget}
-              className="text-xs h-8"
-              renderTriggerValue={(option) => {
-                if (!option) return <span className="text-muted-foreground">Assignee</span>;
-                const agentId = option.id.startsWith("agent:") ? option.id.slice("agent:".length) : null;
-                const agent = agentId ? agentMap?.get(agentId) : null;
-                return (
-                  <>
-                    {agent ? (
-                      <AgentIcon icon={agent.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    ) : null}
-                    <span className="truncate">{option.label}</span>
-                  </>
-                );
-              }}
-              renderOption={(option) => {
-                if (!option.id) return <span className="truncate">{option.label}</span>;
-                const agentId = option.id.startsWith("agent:") ? option.id.slice("agent:".length) : null;
-                const agent = agentId ? agentMap?.get(agentId) : null;
-                return (
-                  <>
-                    {agent ? (
-                      <AgentIcon icon={agent.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    ) : null}
-                    <span className="truncate">{option.label}</span>
-                  </>
-                );
-              }}
-            />
-          )}
-          <Button size="sm" disabled={!canSubmit} onClick={handleSubmit}>
-            {submitting ? "Posting..." : "Comment"}
-          </Button>
-        </div>
-      </div>
+      {sortDescending ? null : composer}
     </div>
   );
 }
